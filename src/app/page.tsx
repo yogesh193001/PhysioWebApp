@@ -63,7 +63,7 @@ export default async function HomePage() {
                       alt=""
                       width={64}
                       height={64}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
                   </div>
                 )}

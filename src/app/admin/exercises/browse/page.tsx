@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft, Search, Plus, Loader2 } from "lucide-react";
 
 type WgerExercise = {
@@ -122,6 +123,17 @@ export default function BrowseExercisesPage() {
               key={ex.id}
               className="flex items-start gap-4 bg-surface border border-border rounded-lg p-4"
             >
+              {ex.image && (
+                <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0 bg-border">
+                  <Image
+                    src={ex.image}
+                    alt={ex.name}
+                    width={48}
+                    height={48}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <h3 className="font-medium">{ex.name}</h3>
                 {ex.category && (

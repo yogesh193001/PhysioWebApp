@@ -92,11 +92,13 @@ function buildSteps(exercises: WorkoutExercise[]): Step[] {
 
 function getSides(we: WorkoutExercise): string[] {
   if (!we.sides) return [];
-  if (we.sides.includes("each side")) return ["Left Side", "Right Side"];
-  if (we.sides.includes("forwards then backwards"))
+  const s = we.sides.toLowerCase();
+  if (s.includes("each side") || s.includes("left then right") || s.includes("left/right"))
+    return ["Left Side", "Right Side"];
+  if (s.includes("forwards then backwards"))
     return ["Forwards", "Backwards"];
-  if (we.sides.includes("back & front"))
-    return we.sides.split(", ").map((s) => s.trim());
+  if (s.includes("back & front"))
+    return we.sides.split(", ").map((p) => p.trim());
   return [];
 }
 
@@ -513,8 +515,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           </span>
         )}
         {next?.we.exercise.imageUrl && (
-          <div className="w-48 h-48 rounded-xl overflow-hidden mb-4">
-            <Image src={next.we.exercise.imageUrl} alt={next.we.exercise.name} width={192} height={192} className="w-full h-full object-cover" />
+          <div className="w-48 h-48 rounded-xl overflow-hidden mb-4 bg-border">
+            <Image src={next.we.exercise.imageUrl} alt={next.we.exercise.name} width={192} height={192} className="w-full h-full object-contain" />
           </div>
         )}
         <p className="text-muted animate-pulse">Starting in 3 seconds...</p>
@@ -538,8 +540,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
         <h1 className="text-2xl sm:text-3xl font-bold mb-4">{step.we.exercise.name}</h1>
 
         {step.we.exercise.imageUrl && (
-          <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden mb-6 shadow-lg">
-            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={288} height={288} className="w-full h-full object-cover" />
+          <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden mb-6 shadow-lg bg-border">
+            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={288} height={288} className="w-full h-full object-contain" />
           </div>
         )}
 
@@ -620,8 +622,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
         <h1 className="text-2xl sm:text-3xl font-bold mb-4">{step.we.exercise.name}</h1>
 
         {step.we.exercise.imageUrl && (
-          <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden mb-6 shadow-lg">
-            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={288} height={288} className="w-full h-full object-cover" />
+          <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden mb-6 shadow-lg bg-border">
+            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={288} height={288} className="w-full h-full object-contain" />
           </div>
         )}
 

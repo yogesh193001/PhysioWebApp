@@ -278,11 +278,17 @@ export default function NewExercisePage() {
               <label className="block text-xs text-muted mb-1">Default Sides</label>
               <input
                 type="text"
+                list="sides-options"
                 value={defaultSides}
                 onChange={(e) => setDefaultSides(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
                 placeholder="e.g., each side"
               />
+              <datalist id="sides-options">
+                <option value="each side" />
+                <option value="left then right" />
+                <option value="forwards then backwards" />
+              </datalist>
             </div>
           </div>
         </div>
@@ -319,12 +325,12 @@ export default function NewExercisePage() {
             {imagePreview && (
               <div className="w-24 h-24 rounded-lg overflow-hidden border border-border">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                <img src={imagePreview} alt="Preview" className="w-full h-full object-contain" />
               </div>
             )}
             {!imagePreview && imageUrl && (
               <div className="w-24 h-24 rounded-lg overflow-hidden border border-border">
-                <Image src={imageUrl} alt="Preview" width={96} height={96} className="w-full h-full object-cover" />
+                <Image src={imageUrl} alt="Preview" width={96} height={96} className="w-full h-full object-contain" />
               </div>
             )}
           </div>

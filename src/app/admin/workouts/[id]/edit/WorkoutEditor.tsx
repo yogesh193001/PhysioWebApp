@@ -110,6 +110,36 @@ export default function WorkoutEditor({
 
   const [exercises, setExercises] = useState(allExercises);
 
+  // Drag-and-drop state
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (index: number) => {
+    setDragIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    if (dragIndex !== null && dragOverIndex !== null && dragIndex !== dragOverIndex) {
+      const newItems = [...items];
+      const [dragged] = newItems.splice(dragIndex, 1);
+      newItems.splice(dragOverIndex, 0, dragged);
+      setItems(newItems);
+      startTransition(async () => {
+        await reorderWorkoutExercises(
+          workout.id,
+          newItems.map((i) => i.id),
+        );
+      });
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
   const moveItem = (index: number, direction: "up" | "down") => {
     const newItems = [...items];
     const targetIndex = direction === "up" ? index - 1 : index + 1;
@@ -310,10 +340,20 @@ export default function WorkoutEditor({
           {items.map((we, index) => (
             <div
               key={we.id}
-              className="bg-surface border border-border rounded-lg p-3"
+              draggable
+              onDragStart={() => handleDragStart(index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDragEnd={handleDragEnd}
+              className={`bg-surface border rounded-lg p-3 transition-all ${
+                dragIndex === index
+                  ? "opacity-50 border-primary"
+                  : dragOverIndex === index
+                  ? "border-primary border-2"
+                  : "border-border"
+              }`}
             >
               <div className="flex items-center gap-3">
-                <GripVertical className="w-4 h-4 text-muted flex-shrink-0" />
+                <GripVertical className="w-4 h-4 text-muted flex-shrink-0 cursor-grab active:cursor-grabbing" />
 
                 <div className="flex flex-col gap-0.5 flex-shrink-0">
                   <button
@@ -343,7 +383,7 @@ export default function WorkoutEditor({
                       alt=""
                       width={32}
                       height={32}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
                   </div>
                 )}
@@ -425,6 +465,7 @@ export default function WorkoutEditor({
                   <label className="text-xs text-muted">Sides:</label>
                   <input
                     type="text"
+                    list="sides-options"
                     value={we.sides || ""}
                     onChange={(e) =>
                       handleUpdateItem(we.id, "sides", e.target.value || null)
@@ -628,6 +669,7 @@ export default function WorkoutEditor({
             <label className="block text-xs text-muted mb-1">Sides</label>
             <input
               type="text"
+              list="sides-options"
               value={addSides}
               onChange={(e) => setAddSides(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background"
@@ -668,6 +710,13 @@ export default function WorkoutEditor({
           </div>
         </div>
       </div>
+
+      {/* Shared datalist for sides options */}
+      <datalist id="sides-options">
+        <option value="each side" />
+        <option value="left then right" />
+        <option value="forwards then backwards" />
+      </datalist>
     </div>
   );
 }
