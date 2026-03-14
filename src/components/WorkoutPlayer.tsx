@@ -15,6 +15,7 @@ import {
   ToggleRight,
   Wind,
   Speech,
+  List,
 } from "lucide-react";
 
 /* ─── types ─── */
@@ -129,6 +130,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const [changingSides, setChangingSides] = useState(false);
   const [sideChangeCountdown, setSideChangeCountdown] = useState(0);
   const [repCount, setRepCount] = useState(0);
+  const [showExerciseList, setShowExerciseList] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -454,6 +456,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
       setCurrentSide(0);
       setIsRunning(false);
       setShowReadyScreen(false);
+      setChangingSides(false);
+      setSideChangeCountdown(0);
       setShowingInstructions(true);
     } else {
       setIsComplete(true);
@@ -482,6 +486,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     setCurrentSide(0);
     setIsRunning(false);
     setShowReadyScreen(false);
+    setChangingSides(false);
+    setSideChangeCountdown(0);
     setShowingInstructions(true);
   };
 
@@ -506,17 +512,105 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     releaseWakeLock();
   };
 
-  const uniqueExerciseIds = useMemo(() => {
+  const jumpToExercise = useCallback((exerciseId: string) => {
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    ttsSpokenForStep.current = -1;
+    const targetIndex = steps.findIndex(s => s.we.exercise.id === exerciseId);
+    if (targetIndex >= 0) {
+      setStepIndex(targetIndex);
+      setCurrentSide(0);
+      setRepCount(0);
+      setIsRunning(false);
+      setShowReadyScreen(false);
+      setChangingSides(false);
+      setSideChangeCountdown(0);
+      setShowExerciseList(false);
+      setShowingInstructions(true);
+    }
+  }, [steps]);
+
+  const uniqueExercises = useMemo(() => {
     const seen = new Set<string>();
     return steps.filter((s) => {
       if (seen.has(s.we.exercise.id)) return false;
       seen.add(s.we.exercise.id);
       return true;
-    }).map((s) => s.we.exercise.id);
+    }).map(s => s.we);
   }, [steps]);
+
+  const uniqueExerciseIds = useMemo(
+    () => uniqueExercises.map(we => we.exercise.id),
+    [uniqueExercises],
+  );
 
   const currentExIndex = step ? uniqueExerciseIds.indexOf(step.we.exercise.id) : 0;
   const progressPercent = (currentExIndex / uniqueExerciseIds.length) * 100;
+
+  /* ─── Exercise list overlay ─── */
+  const exerciseListOverlay = showExerciseList && (
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm overflow-y-auto">
+      <div className="max-w-lg mx-auto p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">Exercises</h2>
+          <button onClick={() => setShowExerciseList(false)} className="p-2 rounded-lg border border-border hover:bg-surface text-lg">
+            ✕
+          </button>
+        </div>
+        <div className="space-y-2">
+          {uniqueExercises.map((we, idx) => {
+            const isCurrent = step?.we.exercise.id === we.exercise.id;
+            const isRepBasedEx = we.holdSeconds == null;
+            const hasSides = getSides(we).length > 0;
+            return (
+              <button
+                key={we.id}
+                onClick={() => jumpToExercise(we.exercise.id)}
+                className={`w-full text-left p-3 rounded-xl border transition-colors flex items-center gap-3 ${isCurrent ? "border-primary bg-primary/10" : "border-border hover:bg-surface"}`}
+              >
+                {we.exercise.imageUrl ? (
+                  <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-border">
+                    <Image src={we.exercise.imageUrl} alt="" width={48} height={48} className="w-full h-full object-contain" />
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-border flex items-center justify-center shrink-0 text-muted text-lg font-bold">
+                    {idx + 1}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{we.exercise.name}</div>
+                  <div className="flex gap-2 text-xs text-muted mt-1 flex-wrap">
+                    <span>{we.reps} rep{we.reps > 1 ? "s" : ""}</span>
+                    {isRepBasedEx ? (
+                      <span>· {we.repDelay}s/rep</span>
+                    ) : (
+                      <span>· {we.holdSeconds}s hold</span>
+                    )}
+                    {hasSides && <span>· {we.sides}</span>}
+                  </div>
+                </div>
+                {isCurrent && <span className="text-xs px-2 py-1 rounded-full bg-primary text-white shrink-0">Current</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ─── Shared nav bar ─── */
+  const navBar = (
+    <div className="flex items-center justify-center gap-4 mt-6">
+      <button onClick={skipBackward} disabled={stepIndex === 0} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted disabled:opacity-30" title="Previous exercise">
+        <SkipBack className="w-5 h-5" />
+      </button>
+      <button onClick={() => setShowExerciseList(true)} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted" title="Exercise list">
+        <List className="w-5 h-5" />
+      </button>
+      <button onClick={skipForward} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted" title="Skip exercise">
+        <SkipForward className="w-5 h-5" />
+      </button>
+    </div>
+  );
 
   /* ─── PRE-START SCREEN ─── */
   if (!isStarted) {
@@ -590,6 +684,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   if (showReadyScreen) {
     const next = steps[stepIndex + 1];
     return (
+      <>
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center">
         <p className="text-muted text-sm mb-2">Next up</p>
         <h2 className="text-2xl font-bold mb-4">{next?.we.exercise.name}</h2>
@@ -604,7 +699,10 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           </div>
         )}
         <p className="text-muted animate-pulse">Starting in 3 seconds...</p>
+        {navBar}
       </div>
+      {exerciseListOverlay}
+      </>
     );
   }
 
@@ -613,6 +711,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     const sides = getSides(step.we);
     const nextSideName = sides[currentSide] || "";
     return (
+      <>
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center">
         <p className="text-muted text-sm mb-2">Get ready</p>
         <h2 className="text-2xl font-bold mb-4">Change to {nextSideName}</h2>
@@ -623,7 +722,10 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
         )}
         <div className="text-5xl font-bold text-primary mb-4">{sideChangeCountdown}</div>
         <p className="text-muted animate-pulse">Switching sides...</p>
+        {navBar}
       </div>
+      {exerciseListOverlay}
+      </>
     );
   }
 
@@ -633,13 +735,18 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     const showFullInstructions = !isSuperset || step.rep === 1;
 
     return (
+      <>
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-4">
         <p className="text-muted text-sm mb-2">
           Exercise {(step ? uniqueExerciseIds.indexOf(step.we.exercise.id) : 0) + 1} of {uniqueExerciseIds.length}
         </p>
 
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2 mb-3 flex-wrap justify-center">
           <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary">{step.we.exercise.category}</span>
+          {step.we.holdSeconds != null
+            ? <span className="text-xs px-3 py-1 rounded-full bg-blue-500/10 text-blue-600">{step.we.holdSeconds}s hold</span>
+            : <span className="text-xs px-3 py-1 rounded-full bg-green-500/10 text-green-600">{step.we.reps} reps · {step.we.repDelay}s each</span>}
+          {getSides(step.we).length > 0 && <span className="text-xs px-3 py-1 rounded-full bg-orange-500/10 text-orange-600">{step.we.sides}</span>}
           {step.supersetLabel && <span className="text-xs px-3 py-1 rounded-full bg-accent/10 text-accent">Superset {step.supersetLabel}</span>}
         </div>
 
@@ -670,24 +777,32 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           <p className="text-muted text-sm mb-4">Rep {step.rep} of {step.totalReps}</p>
         )}
 
-        <div className="flex items-center gap-2 text-xs text-muted mb-6">
-          <span>{step.totalReps} rep{step.totalReps > 1 ? "s" : ""}</span>
-          {step.we.holdSeconds && <span>· {step.we.holdSeconds}s hold</span>}
-          {getSides(step.we).length > 0 && <span>· {step.we.sides}</span>}
+        <div className="flex items-center justify-center gap-4">
+          <button onClick={skipBackward} disabled={stepIndex === 0} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted disabled:opacity-30" title="Previous exercise">
+            <SkipBack className="w-5 h-5" />
+          </button>
+          <button
+            onClick={dismissInstructions}
+            className="bg-primary text-white px-8 py-3 rounded-xl text-lg font-semibold hover:bg-primary-dark transition-colors flex items-center gap-2"
+          >
+            <Play className="w-5 h-5" fill="currentColor" />
+            Start Timer
+          </button>
+          <button onClick={skipForward} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted" title="Skip exercise">
+            <SkipForward className="w-5 h-5" />
+          </button>
         </div>
 
-        <button
-          onClick={dismissInstructions}
-          className="bg-primary text-white px-8 py-3 rounded-xl text-lg font-semibold hover:bg-primary-dark transition-colors flex items-center gap-2"
-        >
-          <SkipForward className="w-5 h-5" />
-          Start Timer
+        <button onClick={() => setShowExerciseList(true)} className="mt-3 p-2 rounded-lg border border-border hover:bg-surface transition-colors text-muted text-sm flex items-center gap-1 mx-auto" title="Exercise list">
+          <List className="w-4 h-4" /> All exercises
         </button>
 
         {ttsEnabled && (
           <p className="text-muted text-xs mt-3 animate-pulse">Listening to instructions... will auto-start when done</p>
         )}
       </div>
+      {exerciseListOverlay}
+      </>
     );
   }
 
@@ -724,8 +839,12 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
 
       {/* Exercise content */}
       <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2 mb-3 flex-wrap justify-center">
           <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary">{step.we.exercise.category}</span>
+          {isRepBased
+            ? <span className="text-xs px-3 py-1 rounded-full bg-green-500/10 text-green-600">{step.we.reps} reps · {step.we.repDelay}s each</span>
+            : <span className="text-xs px-3 py-1 rounded-full bg-blue-500/10 text-blue-600">{step.we.holdSeconds}s hold</span>}
+          {sides.length > 0 && <span className="text-xs px-3 py-1 rounded-full bg-orange-500/10 text-orange-600">{step.we.sides}</span>}
           {step.supersetLabel && <span className="text-xs px-3 py-1 rounded-full bg-accent/10 text-accent">Superset {step.supersetLabel}</span>}
         </div>
 
@@ -789,6 +908,9 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
         <button onClick={skipBackward} disabled={stepIndex === 0} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted disabled:opacity-30" title="Previous exercise">
           <SkipBack className="w-5 h-5" />
         </button>
+        <button onClick={() => setShowExerciseList(true)} className="p-3 rounded-full border border-border hover:bg-surface transition-colors text-muted" title="Exercise list">
+          <List className="w-5 h-5" />
+        </button>
         <button onClick={togglePause} className="bg-primary text-white p-4 rounded-full hover:bg-primary-dark transition-colors">
           {isRunning ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8" fill="currentColor" />}
         </button>
@@ -801,6 +923,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           <SkipForward className="w-5 h-5" />
         </button>
       </div>
+      {exerciseListOverlay}
     </div>
   );
 }
