@@ -126,6 +126,9 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [showReadyScreen, setShowReadyScreen] = useState(false);
   const [showingInstructions, setShowingInstructions] = useState(false);
+  const [changingSides, setChangingSides] = useState(false);
+  const [sideChangeCountdown, setSideChangeCountdown] = useState(0);
+  const [repCount, setRepCount] = useState(0);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -220,10 +223,17 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     instructionPhaseRef.current = true;
 
     const parts: string[] = [step.we.exercise.name];
-    if (step.supersetLabel) parts.push(`Superset ${step.supersetLabel}`);
-    if (step.we.exercise.instructions) parts.push(step.we.exercise.instructions);
-    if (step.we.notes) parts.push(step.we.notes);
-    if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
+
+    // For supersets on rep > 1, just say the name
+    const isSuperset = step.supersetLabel != null;
+    if (isSuperset && step.rep > 1) {
+      // Just the exercise name, no full instructions
+    } else {
+      if (step.supersetLabel) parts.push(`Superset ${step.supersetLabel}`);
+      if (step.we.exercise.instructions) parts.push(step.we.exercise.instructions);
+      if (step.we.notes) parts.push(step.we.notes);
+      if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
+    }
 
     if (!ttsEnabled || typeof speechSynthesis === "undefined") {
       const tid = setTimeout(dismissInstructions, 3000);
@@ -244,7 +254,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
 
   /* ─── Active phase TTS (rep announcements + breathing cue) ─── */
   useEffect(() => {
-    if (!step || !isStarted || !ttsEnabled || showingInstructions) return;
+    if (!step || !isStarted || !ttsEnabled || showingInstructions || changingSides) return;
     const key = stepIndex * 100 + currentSide;
     if (ttsSpokenForStep.current === key) return;
     ttsSpokenForStep.current = key;
@@ -258,20 +268,53 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
 
     if (sideName) parts.push(sideName);
 
-    if (step.totalReps > 1 && !step.supersetLabel && currentSide === 0 && step.rep > 1) {
-      parts.push(`Now start your ${ordinal(step.rep)} rep`);
+    if (step.totalReps > 1 && currentSide === 0 && step.rep > 1) {
+      // For supersets, just say the exercise name
+      if (step.supersetLabel) {
+        parts.push(step.we.exercise.name);
+      } else {
+        parts.push(`This is your ${ordinal(step.rep)} rep`);
+        // Occasionally say how many reps are left
+        const repsLeft = step.totalReps - step.rep;
+        if (repsLeft > 0 && (repsLeft <= 2 || step.rep % 3 === 0)) {
+          parts.push(`${repsLeft} rep${repsLeft > 1 ? "s" : ""} left`);
+        }
+      }
     }
 
     if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
 
     if (parts.length > 0) speak(parts.join(". "));
-  }, [stepIndex, currentSide, step, isStarted, ttsEnabled, speak, showingInstructions]);
+  }, [stepIndex, currentSide, step, isStarted, ttsEnabled, speak, showingInstructions, changingSides]);
 
   /* ─── Init timer ─── */
   const initTimer = useCallback(() => {
     if (!step) return;
-    setTimeLeft(getTimerDuration(step.we));
+    const isRepBased = step.we.holdSeconds == null;
+    if (isRepBased) {
+      // Rep-based: count up with repDelay interval
+      setRepCount(0);
+      setTimeLeft(step.we.repDelay || 5);
+    } else {
+      setTimeLeft(step.we.holdSeconds!);
+    }
   }, [step]);
+
+  /* ─── Side change countdown ─── */
+  useEffect(() => {
+    if (!changingSides || sideChangeCountdown <= 0) return;
+    const interval = setInterval(() => {
+      setSideChangeCountdown((t) => {
+        if (t <= 1) {
+          setChangingSides(false);
+          setIsRunning(true);
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [changingSides, sideChangeCountdown]);
 
   /* ─── Advance logic ─── */
   const advance = useCallback(() => {
@@ -279,8 +322,20 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     const sides = getSides(step.we);
 
     if (sides.length > 0 && currentSide < sides.length - 1) {
+      // Pause for side change with 3-second countdown
+      const nextSideName = sides[currentSide + 1];
+      setIsRunning(false);
+      setChangingSides(true);
+      setSideChangeCountdown(3);
+      speak(`Change to ${nextSideName}`);
       setCurrentSide((s) => s + 1);
-      setTimeLeft(getTimerDuration(step.we));
+      const isRepBased = step.we.holdSeconds == null;
+      if (isRepBased) {
+        setRepCount(0);
+        setTimeLeft(step.we.repDelay || 5);
+      } else {
+        setTimeLeft(step.we.holdSeconds!);
+      }
       playBeep(600, 100);
       return;
     }
@@ -298,7 +353,13 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
       } else {
         setStepIndex((i) => i + 1);
         setCurrentSide(0);
-        setTimeLeft(getTimerDuration(nextStep.we));
+        const isRepBased = nextStep.we.holdSeconds == null;
+        if (isRepBased) {
+          setRepCount(0);
+          setTimeLeft(nextStep.we.repDelay || 5);
+        } else {
+          setTimeLeft(nextStep.we.holdSeconds!);
+        }
         playBeep(600, 100);
       }
       return;
@@ -308,18 +369,38 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     setIsComplete(true);
     setIsRunning(false);
     releaseWakeLock();
-  }, [step, stepIndex, steps, currentSide, autoAdvance, playBeep, playCompletionSound, releaseWakeLock]);
+  }, [step, stepIndex, steps, currentSide, autoAdvance, playBeep, playCompletionSound, releaseWakeLock, speak]);
 
   /* ─── Timer countdown ─── */
   useEffect(() => {
-    if (!isRunning || timeLeft <= 0) return;
+    if (!isRunning || timeLeft <= 0 || !step) return;
+    const isRepBased = step.we.holdSeconds == null;
+
     const interval = setInterval(() => {
       setTimeLeft((t) => {
         if (t <= 1) {
-          advance();
-          return 0;
+          if (isRepBased) {
+            // Count this rep
+            setRepCount((prev) => {
+              const newCount = prev + 1;
+              if (newCount >= step.totalReps) {
+                // All reps done for this step, advance
+                advance();
+                return newCount;
+              }
+              // Beep for the rep
+              playBeep(600, 100);
+              speakCountdown(newCount + 1);
+              return newCount;
+            });
+            // Reset the delay timer for the next rep
+            return step.we.repDelay || 5;
+          } else {
+            advance();
+            return 0;
+          }
         }
-        if (t <= 6) {
+        if (!isRepBased && t <= 6) {
           speakCountdown(t - 1);
           playBeep(400, 80);
         }
@@ -327,7 +408,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [isRunning, timeLeft, advance, playBeep, speakCountdown]);
+  }, [isRunning, timeLeft, advance, playBeep, speakCountdown, step]);
 
   useEffect(() => {
     initTimer();
@@ -414,10 +495,13 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     ttsSpokenForStep.current = -1;
     setStepIndex(0);
     setCurrentSide(0);
+    setRepCount(0);
     setIsComplete(false);
     setIsStarted(false);
     setShowReadyScreen(false);
     setShowingInstructions(false);
+    setChangingSides(false);
+    setSideChangeCountdown(0);
     setIsRunning(false);
     releaseWakeLock();
   };
@@ -524,8 +608,30 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     );
   }
 
+  /* ─── CHANGING SIDES SCREEN ─── */
+  if (changingSides && step) {
+    const sides = getSides(step.we);
+    const nextSideName = sides[currentSide] || "";
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center text-center">
+        <p className="text-muted text-sm mb-2">Get ready</p>
+        <h2 className="text-2xl font-bold mb-4">Change to {nextSideName}</h2>
+        {step.we.exercise.imageUrl && (
+          <div className="w-48 h-48 rounded-xl overflow-hidden mb-4 bg-border">
+            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={192} height={192} className="w-full h-full object-contain" />
+          </div>
+        )}
+        <div className="text-5xl font-bold text-primary mb-4">{sideChangeCountdown}</div>
+        <p className="text-muted animate-pulse">Switching sides...</p>
+      </div>
+    );
+  }
+
   /* ─── INSTRUCTION SCREEN ─── */
   if (showingInstructions && step) {
+    const isSuperset = step.supersetLabel != null;
+    const showFullInstructions = !isSuperset || step.rep === 1;
+
     return (
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-4">
         <p className="text-muted text-sm mb-2">
@@ -545,19 +651,23 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           </div>
         )}
 
-        {step.we.exercise.instructions && (
+        {showFullInstructions && step.we.exercise.instructions && (
           <p className="text-muted text-sm max-w-md mb-4">{step.we.exercise.instructions}</p>
         )}
 
-        {step.we.exercise.breathingCue && (
+        {showFullInstructions && step.we.exercise.breathingCue && (
           <div className="flex items-center gap-2 bg-accent/10 text-accent px-4 py-2 rounded-lg mb-4 text-sm max-w-md">
             <Wind className="w-4 h-4 flex-shrink-0" />
             {step.we.exercise.breathingCue}
           </div>
         )}
 
-        {step.we.notes && (
+        {showFullInstructions && step.we.notes && (
           <p className="text-xs text-muted/70 italic mb-4 max-w-md">Note: {step.we.notes}</p>
+        )}
+
+        {!showFullInstructions && (
+          <p className="text-muted text-sm mb-4">Rep {step.rep} of {step.totalReps}</p>
         )}
 
         <div className="flex items-center gap-2 text-xs text-muted mb-6">
@@ -586,7 +696,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const sides = getSides(step.we);
   const currentSideName = sides[currentSide] || null;
   const isRepBased = step.we.holdSeconds == null;
-  const timerMax = getTimerDuration(step.we);
+  const timerMax = isRepBased ? (step.we.repDelay || 5) : step.we.holdSeconds!;
 
   /* ─── ACTIVE WORKOUT SCREEN ─── */
   return (
@@ -636,19 +746,30 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
             <circle cx="60" cy="60" r="54" fill="none" stroke="currentColor" strokeWidth="6"
               className={isRepBased ? "text-accent" : "text-primary"}
               strokeDasharray={`${2 * Math.PI * 54}`}
-              strokeDashoffset={`${2 * Math.PI * 54 * (1 - timeLeft / timerMax)}`}
-              strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }} />
+              strokeDashoffset={isRepBased
+                ? `${2 * Math.PI * 54 * (1 - repCount / step.totalReps)}`
+                : `${2 * Math.PI * 54 * (1 - timeLeft / timerMax)}`}
+              strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s ease" }} />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-3xl sm:text-4xl font-bold font-mono">{timeLeft}</span>
-            <span className="text-xs text-muted">{isRepBased ? "next rep" : "seconds"}</span>
+            {isRepBased ? (
+              <>
+                <span className="text-3xl sm:text-4xl font-bold font-mono">{repCount}</span>
+                <span className="text-xs text-muted">of {step.totalReps} reps</span>
+              </>
+            ) : (
+              <>
+                <span className="text-3xl sm:text-4xl font-bold font-mono">{timeLeft}</span>
+                <span className="text-xs text-muted">seconds</span>
+              </>
+            )}
           </div>
         </div>
 
         <div className="text-sm text-muted mb-4">
           Rep {step.rep} of {step.totalReps}
           {step.we.holdSeconds && <span> · {step.we.holdSeconds}s hold</span>}
-          {isRepBased && <span> · {step.we.repDelay}s delay</span>}
+          {isRepBased && <span> · {timeLeft}s to next</span>}
         </div>
 
         {step.we.exercise.breathingCue && (
