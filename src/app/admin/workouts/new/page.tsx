@@ -1,16 +1,29 @@
-import { redirect } from "next/navigation";
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createWorkout } from "@/lib/actions/workouts";
 import { ArrowLeft } from "lucide-react";
 
 export default function NewWorkoutPage() {
-  async function handleCreate(formData: FormData) {
-    "use server";
-    const result = await createWorkout(formData);
-    if (result.success && result.id) {
-      redirect(`/admin/workouts/${result.id}/edit`);
-    }
-  }
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isPending) return;
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const result = await createWorkout(formData);
+      if (result.success && result.id) {
+        router.push(`/admin/workouts/${result.id}/edit`);
+      } else {
+        setError(result.error || "Failed to create workout");
+      }
+    });
+  };
 
   return (
     <div className="max-w-2xl">
@@ -23,7 +36,9 @@ export default function NewWorkoutPage() {
 
       <h1 className="text-3xl font-bold mb-6">Create New Workout</h1>
 
-      <form action={handleCreate} className="space-y-4">
+      {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium mb-1">Name *</label>
           <input
@@ -47,9 +62,10 @@ export default function NewWorkoutPage() {
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
-            className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary-dark transition-colors"
+            disabled={isPending}
+            className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
           >
-            Create & Add Exercises
+            {isPending ? "Creating..." : "Create & Add Exercises"}
           </button>
           <Link
             href="/admin/workouts"
