@@ -16,6 +16,7 @@ import {
   Wind,
   Speech,
   List,
+  Timer,
 } from "lucide-react";
 
 /* ─── types ─── */
@@ -131,6 +132,9 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const [sideChangeCountdown, setSideChangeCountdown] = useState(0);
   const [repCount, setRepCount] = useState(0);
   const [showExerciseList, setShowExerciseList] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const startTimeRef = useRef<Date | null>(null);
+  const sessionLoggedRef = useRef(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -436,6 +440,8 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const startWorkout = () => {
     setIsStarted(true);
     setShowingInstructions(true);
+    startTimeRef.current = new Date();
+    sessionLoggedRef.current = false;
     requestWakeLock();
     initTimer();
   };
@@ -502,6 +508,9 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     setStepIndex(0);
     setCurrentSide(0);
     setRepCount(0);
+    setElapsedSeconds(0);
+    startTimeRef.current = null;
+    sessionLoggedRef.current = false;
     setIsComplete(false);
     setIsStarted(false);
     setShowReadyScreen(false);
@@ -545,6 +554,39 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
 
   const currentExIndex = step ? uniqueExerciseIds.indexOf(step.we.exercise.id) : 0;
   const progressPercent = (currentExIndex / uniqueExerciseIds.length) * 100;
+
+  /* ─── Elapsed time ticker ─── */
+  useEffect(() => {
+    if (!isStarted || isComplete) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isStarted, isComplete]);
+
+  /* ─── Auto-log session on completion ─── */
+  useEffect(() => {
+    if (!isComplete || sessionLoggedRef.current) return;
+    sessionLoggedRef.current = true;
+    const startedAt = startTimeRef.current?.toISOString() || new Date().toISOString();
+    fetch("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workoutId: workout.id,
+        startedAt,
+        durationSeconds: elapsedSeconds,
+        exercisesCompleted: uniqueExerciseIds.length,
+        totalExercises: uniqueExerciseIds.length,
+      }),
+    }).catch(() => { /* silently fail */ });
+  }, [isComplete, workout.id, elapsedSeconds, uniqueExerciseIds.length]);
+
+  const formatElapsed = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
 
   /* ─── Exercise list overlay ─── */
   const exerciseListOverlay = showExerciseList && (
@@ -667,11 +709,18 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
       <div className="min-h-[80vh] flex flex-col items-center justify-center text-center">
         <div className="text-6xl mb-4">🎉</div>
         <h1 className="text-3xl font-bold mb-2">Workout Complete!</h1>
-        <p className="text-muted mb-8">Great job finishing {workout.name}!</p>
-        <div className="flex gap-4">
+        <p className="text-muted mb-2">Great job finishing {workout.name}!</p>
+        <p className="text-muted mb-8 flex items-center gap-2 justify-center">
+          <Timer className="w-4 h-4" />
+          Total time: {formatElapsed(elapsedSeconds)}
+        </p>
+        <div className="flex gap-4 flex-wrap justify-center">
           <button onClick={restartWorkout} className="bg-primary text-white px-6 py-3 rounded-lg hover:bg-primary-dark transition-colors">
             Do it again
           </button>
+          <Link href="/progress" className="bg-accent text-white px-6 py-3 rounded-lg hover:bg-accent/80 transition-colors">
+            View Progress
+          </Link>
           <Link href={`/workout/${workout.id}`} className="px-6 py-3 rounded-lg border border-border hover:bg-surface transition-colors">
             Back to overview
           </Link>
@@ -823,7 +872,13 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
 
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <span className="text-sm text-muted">Exercise {currentExIndex + 1} of {uniqueExerciseIds.length}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted">Exercise {currentExIndex + 1} of {uniqueExerciseIds.length}</span>
+          <span className="flex items-center gap-1 text-sm text-muted">
+            <Timer className="w-3.5 h-3.5" />
+            {formatElapsed(elapsedSeconds)}
+          </span>
+        </div>
         <div className="flex gap-2">
           <button onClick={() => setTtsEnabled(!ttsEnabled)} className="p-2 rounded-lg border border-border hover:bg-surface" title={`Voice: ${ttsEnabled ? "ON" : "OFF"}`}>
             <Speech className={`w-4 h-4 ${ttsEnabled ? "text-accent" : "text-muted"}`} />

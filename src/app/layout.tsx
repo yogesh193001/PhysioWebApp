@@ -38,6 +38,12 @@ export default function RootLayout({
                 Workouts
               </Link>
               <Link
+                href="/progress"
+                className="hover:text-primary transition-colors"
+              >
+                Progress
+              </Link>
+              <Link
                 href="/admin"
                 className="hover:text-primary transition-colors"
               >
