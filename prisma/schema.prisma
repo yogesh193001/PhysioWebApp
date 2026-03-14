@@ -9,15 +9,19 @@ datasource db {
 }
 
 model Exercise {
-  id           String            @id @default(cuid())
-  name         String
-  category     String
-  instructions String            @default("")
-  breathingCue String?
-  imageUrl     String?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  workouts     WorkoutExercise[]
+  id               String            @id @default(cuid())
+  name             String
+  category         String
+  instructions     String            @default("")
+  breathingCue     String?
+  imageUrl         String?
+  defaultReps      Int               @default(3)
+  defaultHoldSecs  Int?
+  defaultRepDelay  Int               @default(5)
+  defaultSides     String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  workouts         WorkoutExercise[]
 }
 
 model Workout {

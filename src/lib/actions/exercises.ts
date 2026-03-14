@@ -45,6 +45,11 @@ export async function createExercise(formData: FormData) {
   const breathingCue = (formData.get("breathingCue") as string) || null;
   let imageUrl = (formData.get("imageUrl") as string) || null;
   const imageFile = formData.get("imageFile") as File | null;
+  const defaultReps = parseInt(formData.get("defaultReps") as string) || 3;
+  const defaultHoldSecsStr = formData.get("defaultHoldSecs") as string;
+  const defaultHoldSecs = defaultHoldSecsStr ? parseInt(defaultHoldSecsStr) || null : null;
+  const defaultRepDelay = parseInt(formData.get("defaultRepDelay") as string) || 5;
+  const defaultSides = (formData.get("defaultSides") as string) || null;
 
   if (!name || !category) {
     return { error: "Name and category are required" };
@@ -56,7 +61,7 @@ export async function createExercise(formData: FormData) {
   }
 
   const exercise = await prisma.exercise.create({
-    data: { name, category, instructions: instructions || "", breathingCue, imageUrl },
+    data: { name, category, instructions: instructions || "", breathingCue, imageUrl, defaultReps, defaultHoldSecs, defaultRepDelay, defaultSides },
   });
 
   revalidatePath("/admin/exercises");
@@ -70,6 +75,11 @@ export async function updateExercise(id: string, formData: FormData) {
   const breathingCue = (formData.get("breathingCue") as string) || null;
   let imageUrl = (formData.get("imageUrl") as string) || null;
   const imageFile = formData.get("imageFile") as File | null;
+  const defaultReps = parseInt(formData.get("defaultReps") as string) || 3;
+  const defaultHoldSecsStr = formData.get("defaultHoldSecs") as string;
+  const defaultHoldSecs = defaultHoldSecsStr ? parseInt(defaultHoldSecsStr) || null : null;
+  const defaultRepDelay = parseInt(formData.get("defaultRepDelay") as string) || 5;
+  const defaultSides = (formData.get("defaultSides") as string) || null;
 
   if (!name || !category) {
     return { error: "Name and category are required" };
@@ -82,7 +92,7 @@ export async function updateExercise(id: string, formData: FormData) {
 
   await prisma.exercise.update({
     where: { id },
-    data: { name, category, instructions: instructions || "", breathingCue, imageUrl },
+    data: { name, category, instructions: instructions || "", breathingCue, imageUrl, defaultReps, defaultHoldSecs, defaultRepDelay, defaultSides },
   });
 
   revalidatePath("/admin/exercises");

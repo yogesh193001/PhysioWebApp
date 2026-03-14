@@ -104,6 +104,11 @@ function getTimerDuration(we: WorkoutExercise): number {
   return we.holdSeconds || we.repDelay || 5;
 }
 
+function ordinal(n: number): string {
+  const words = ["", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+  return words[n] || `${n}th`;
+}
+
 /* ──────────────────── COMPONENT ──────────────────── */
 export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const steps = useMemo(() => buildSteps(workout.exercises), [workout.exercises]);
@@ -118,10 +123,12 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [ttsEnabled, setTtsEnabled] = useState(true);
   const [showReadyScreen, setShowReadyScreen] = useState(false);
+  const [showingInstructions, setShowingInstructions] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const ttsSpokenForStep = useRef(-1);
+  const instructionPhaseRef = useRef(false);
 
   const step = steps[stepIndex] as Step | undefined;
 
@@ -198,32 +205,65 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     [ttsEnabled],
   );
 
-  /* ─── Read instructions for current step ─── */
+  const dismissInstructions = useCallback(() => {
+    instructionPhaseRef.current = false;
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    setShowingInstructions(false);
+    setIsRunning(true);
+  }, []);
+
+  /* ─── Instruction phase TTS ─── */
   useEffect(() => {
-    if (!step || !isStarted || !ttsEnabled) return;
+    if (!showingInstructions || !step) return;
+    instructionPhaseRef.current = true;
+
+    const parts: string[] = [step.we.exercise.name];
+    if (step.supersetLabel) parts.push(`Superset ${step.supersetLabel}`);
+    if (step.we.exercise.instructions) parts.push(step.we.exercise.instructions);
+    if (step.we.notes) parts.push(step.we.notes);
+    if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
+
+    if (!ttsEnabled || typeof speechSynthesis === "undefined") {
+      const tid = setTimeout(dismissInstructions, 3000);
+      return () => clearTimeout(tid);
+    }
+
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(parts.join(". "));
+    u.rate = 1.0;
+    u.pitch = 1.0;
+    u.onend = () => {
+      if (instructionPhaseRef.current) {
+        dismissInstructions();
+      }
+    };
+    speechSynthesis.speak(u);
+  }, [showingInstructions, step, ttsEnabled, dismissInstructions]);
+
+  /* ─── Active phase TTS (rep announcements + breathing cue) ─── */
+  useEffect(() => {
+    if (!step || !isStarted || !ttsEnabled || showingInstructions) return;
     const key = stepIndex * 100 + currentSide;
     if (ttsSpokenForStep.current === key) return;
     ttsSpokenForStep.current = key;
+
+    // Rep 1, side 0: already spoken in instruction phase
+    if (step.rep === 1 && currentSide === 0) return;
 
     const parts: string[] = [];
     const sides = getSides(step.we);
     const sideName = sides[currentSide] || null;
 
-    if (step.rep === 1 && currentSide === 0) {
-      parts.push(step.we.exercise.name);
-      if (step.supersetLabel) parts.push(`Superset ${step.supersetLabel}`);
-      if (step.we.exercise.instructions) parts.push(step.we.exercise.instructions);
-      if (step.we.notes) parts.push(step.we.notes);
-      if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
+    if (sideName) parts.push(sideName);
+
+    if (step.totalReps > 1 && !step.supersetLabel && currentSide === 0 && step.rep > 1) {
+      parts.push(`Now start your ${ordinal(step.rep)} rep`);
     }
 
-    if (sideName) parts.push(sideName);
-    if (step.totalReps > 1 && !step.supersetLabel) {
-      parts.push(`Rep ${step.rep} of ${step.totalReps}`);
-    }
+    if (step.we.exercise.breathingCue) parts.push(step.we.exercise.breathingCue);
 
     if (parts.length > 0) speak(parts.join(". "));
-  }, [stepIndex, currentSide, step, isStarted, ttsEnabled, speak]);
+  }, [stepIndex, currentSide, step, isStarted, ttsEnabled, speak, showingInstructions]);
 
   /* ─── Init timer ─── */
   const initTimer = useCallback(() => {
@@ -303,14 +343,14 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     if (!showReadyScreen) return;
     const timeout = setTimeout(() => {
       goToNextStep();
-      setIsRunning(true);
+      setShowingInstructions(true);
     }, 3000);
     return () => clearTimeout(timeout);
   }, [showReadyScreen, goToNextStep]);
 
   const startWorkout = () => {
     setIsStarted(true);
-    setIsRunning(true);
+    setShowingInstructions(true);
     requestWakeLock();
     initTimer();
   };
@@ -329,8 +369,9 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     if (next < steps.length) {
       setStepIndex(next);
       setCurrentSide(0);
-      setIsRunning(true);
+      setIsRunning(false);
       setShowReadyScreen(false);
+      setShowingInstructions(true);
     } else {
       setIsComplete(true);
       setIsRunning(false);
@@ -356,13 +397,14 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
       }
     }
     setCurrentSide(0);
-    setIsRunning(true);
+    setIsRunning(false);
     setShowReadyScreen(false);
+    setShowingInstructions(true);
   };
 
   const manualNext = () => {
     goToNextStep();
-    setIsRunning(true);
+    setShowingInstructions(true);
   };
 
   const restartWorkout = () => {
@@ -373,6 +415,7 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     setIsComplete(false);
     setIsStarted(false);
     setShowReadyScreen(false);
+    setShowingInstructions(false);
     setIsRunning(false);
     releaseWakeLock();
   };
@@ -475,6 +518,63 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
           </div>
         )}
         <p className="text-muted animate-pulse">Starting in 3 seconds...</p>
+      </div>
+    );
+  }
+
+  /* ─── INSTRUCTION SCREEN ─── */
+  if (showingInstructions && step) {
+    return (
+      <div className="min-h-[80vh] flex flex-col items-center justify-center text-center px-4">
+        <p className="text-muted text-sm mb-2">
+          Exercise {(step ? uniqueExerciseIds.indexOf(step.we.exercise.id) : 0) + 1} of {uniqueExerciseIds.length}
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <span className="text-xs px-3 py-1 rounded-full bg-primary/10 text-primary">{step.we.exercise.category}</span>
+          {step.supersetLabel && <span className="text-xs px-3 py-1 rounded-full bg-accent/10 text-accent">Superset {step.supersetLabel}</span>}
+        </div>
+
+        <h1 className="text-2xl sm:text-3xl font-bold mb-4">{step.we.exercise.name}</h1>
+
+        {step.we.exercise.imageUrl && (
+          <div className="w-56 h-56 sm:w-72 sm:h-72 rounded-2xl overflow-hidden mb-6 shadow-lg">
+            <Image src={step.we.exercise.imageUrl} alt={step.we.exercise.name} width={288} height={288} className="w-full h-full object-cover" />
+          </div>
+        )}
+
+        {step.we.exercise.instructions && (
+          <p className="text-muted text-sm max-w-md mb-4">{step.we.exercise.instructions}</p>
+        )}
+
+        {step.we.exercise.breathingCue && (
+          <div className="flex items-center gap-2 bg-accent/10 text-accent px-4 py-2 rounded-lg mb-4 text-sm max-w-md">
+            <Wind className="w-4 h-4 flex-shrink-0" />
+            {step.we.exercise.breathingCue}
+          </div>
+        )}
+
+        {step.we.notes && (
+          <p className="text-xs text-muted/70 italic mb-4 max-w-md">Note: {step.we.notes}</p>
+        )}
+
+        <div className="flex items-center gap-2 text-xs text-muted mb-6">
+          <span>{step.totalReps} rep{step.totalReps > 1 ? "s" : ""}</span>
+          {step.we.holdSeconds && <span>· {step.we.holdSeconds}s hold</span>}
+          {getSides(step.we).length > 0 && <span>· {step.we.sides}</span>}
+        </div>
+
+        <button
+          onClick={dismissInstructions}
+          className="bg-primary text-white px-8 py-3 rounded-xl text-lg font-semibold hover:bg-primary-dark transition-colors flex items-center gap-2"
+        >
+          <SkipForward className="w-5 h-5" />
+          Start Timer
+        </button>
+
+        {ttsEnabled && (
+          <p className="text-muted text-xs mt-3 animate-pulse">Listening to instructions... will auto-start when done</p>
+        )}
       </div>
     );
   }

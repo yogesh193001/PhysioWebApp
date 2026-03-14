@@ -28,6 +28,10 @@ type Exercise = {
   instructions: string;
   breathingCue: string | null;
   imageUrl: string | null;
+  defaultReps: number;
+  defaultHoldSecs: number | null;
+  defaultRepDelay: number;
+  defaultSides: string | null;
 };
 
 type WorkoutExercise = {
@@ -78,6 +82,17 @@ export default function WorkoutEditor({
   const [addSides, setAddSides] = useState("");
   const [addNotes, setAddNotes] = useState("");
   const [addSupersetGroupId, setAddSupersetGroupId] = useState<string>("");
+
+  const handleSelectExercise = (id: string) => {
+    setAddExerciseId(id);
+    const ex = exercises.find((e) => e.id === id);
+    if (ex) {
+      setAddReps(ex.defaultReps);
+      setAddHold(ex.defaultHoldSecs?.toString() || "");
+      setAddRepDelay(ex.defaultRepDelay);
+      setAddSides(ex.defaultSides || "");
+    }
+  };
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -179,6 +194,10 @@ export default function WorkoutEditor({
           instructions: newExInstructions,
           breathingCue: null,
           imageUrl: null,
+          defaultReps: 3,
+          defaultHoldSecs: null,
+          defaultRepDelay: 5,
+          defaultSides: null,
         };
         setExercises((prev) => [...prev, newEx].sort((a, b) => a.name.localeCompare(b.name)));
         setAddExerciseId(result.id);
@@ -207,13 +226,26 @@ export default function WorkoutEditor({
 
   const importWger = async (ex: WgerResult) => {
     startTransition(async () => {
+      // Fetch full exercise details from Wger
+      let instructions = "";
+      let imageUrl = ex.image;
+      try {
+        const detailRes = await fetch(`/api/wger/exercise/${ex.id}`);
+        if (detailRes.ok) {
+          const detail = await detailRes.json();
+          instructions = detail.description || "";
+          if (detail.mainImage) imageUrl = detail.mainImage;
+        }
+      } catch { /* use defaults */ }
+
       const res = await fetch("/api/exercises/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: ex.name,
           category: mapWgerCategory(ex.category),
-          instructions: "",
+          instructions,
+          imageUrl,
         }),
       });
       if (res.ok) {
@@ -224,7 +256,11 @@ export default function WorkoutEditor({
           category: imported.category,
           instructions: imported.instructions || "",
           breathingCue: null,
-          imageUrl: null,
+          imageUrl: imported.imageUrl || null,
+          defaultReps: 3,
+          defaultHoldSecs: null,
+          defaultRepDelay: 5,
+          defaultSides: null,
         };
         setExercises((prev) => [...prev, newEx].sort((a, b) => a.name.localeCompare(b.name)));
         setAddExerciseId(imported.id);
@@ -542,7 +578,7 @@ export default function WorkoutEditor({
           <div className="sm:col-span-2 lg:col-span-3">
             <select
               value={addExerciseId}
-              onChange={(e) => setAddExerciseId(e.target.value)}
+              onChange={(e) => handleSelectExercise(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:outline-none"
             >
               <option value="">Select an exercise...</option>

@@ -14,6 +14,10 @@ type ExerciseData = {
   instructions: string;
   breathingCue: string | null;
   imageUrl: string | null;
+  defaultReps: number;
+  defaultHoldSecs: number | null;
+  defaultRepDelay: number;
+  defaultSides: string | null;
 };
 
 export default function EditExerciseForm({ exercise }: { exercise: ExerciseData }) {
@@ -29,6 +33,10 @@ export default function EditExerciseForm({ exercise }: { exercise: ExerciseData 
   const [imageUrl, setImageUrl] = useState(exercise.imageUrl || "");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [defaultReps, setDefaultReps] = useState(exercise.defaultReps);
+  const [defaultHoldSecs, setDefaultHoldSecs] = useState<string>(exercise.defaultHoldSecs?.toString() || "");
+  const [defaultRepDelay, setDefaultRepDelay] = useState(exercise.defaultRepDelay);
+  const [defaultSides, setDefaultSides] = useState(exercise.defaultSides || "");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -59,6 +67,10 @@ export default function EditExerciseForm({ exercise }: { exercise: ExerciseData 
     formData.set("instructions", instructions);
     formData.set("breathingCue", breathingCue);
     formData.set("imageUrl", imageUrl);
+    formData.set("defaultReps", String(defaultReps));
+    formData.set("defaultHoldSecs", defaultHoldSecs);
+    formData.set("defaultRepDelay", String(defaultRepDelay));
+    formData.set("defaultSides", defaultSides);
     if (imageFile) formData.set("imageFile", imageFile);
 
     startTransition(async () => {
@@ -130,6 +142,55 @@ export default function EditExerciseForm({ exercise }: { exercise: ExerciseData 
             onChange={(e) => setBreathingCue(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
           />
+        </div>
+
+        {/* Default timer settings */}
+        <div className="border border-border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-medium text-muted">Default Timer Settings</h3>
+          <p className="text-xs text-muted">These defaults are used when adding this exercise to a workout.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted mb-1">Default Reps</label>
+              <input
+                type="number"
+                min={1}
+                value={defaultReps}
+                onChange={(e) => setDefaultReps(parseInt(e.target.value) || 1)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Default Hold (seconds)</label>
+              <input
+                type="number"
+                min={0}
+                value={defaultHoldSecs}
+                onChange={(e) => setDefaultHoldSecs(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
+                placeholder="None (rep-based)"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Default Rep Delay (s)</label>
+              <input
+                type="number"
+                min={1}
+                value={defaultRepDelay}
+                onChange={(e) => setDefaultRepDelay(parseInt(e.target.value) || 5)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-muted mb-1">Default Sides</label>
+              <input
+                type="text"
+                value={defaultSides}
+                onChange={(e) => setDefaultSides(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
+                placeholder="e.g., each side"
+              />
+            </div>
+          </div>
         </div>
 
         <div>

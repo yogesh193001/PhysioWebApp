@@ -17,6 +17,7 @@ export default function BrowseExercisesPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [imported, setImported] = useState<Set<number>>(new Set());
+  const [importing, setImporting] = useState<Set<number>>(new Set());
 
   const searchExercises = async () => {
     if (!query.trim()) return;
@@ -37,20 +38,40 @@ export default function BrowseExercisesPage() {
   };
 
   const importExercise = async (ex: WgerExercise) => {
+    setImporting((prev) => new Set(prev).add(ex.id));
     try {
+      // Fetch full exercise details from Wger
+      let instructions = "";
+      let imageUrl = ex.image;
+      try {
+        const detailRes = await fetch(`/api/wger/exercise/${ex.id}`);
+        if (detailRes.ok) {
+          const detail = await detailRes.json();
+          instructions = detail.description || "";
+          if (detail.mainImage) imageUrl = detail.mainImage;
+        }
+      } catch { /* use defaults */ }
+
       const res = await fetch("/api/exercises/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: ex.name,
           category: mapWgerCategory(ex.category),
-          instructions: "",
+          instructions,
+          imageUrl,
         }),
       });
       if (!res.ok) throw new Error("Failed to import");
       setImported((prev) => new Set(prev).add(ex.id));
     } catch {
       setError("Failed to import exercise.");
+    } finally {
+      setImporting((prev) => {
+        const next = new Set(prev);
+        next.delete(ex.id);
+        return next;
+      });
     }
   };
 
@@ -111,7 +132,7 @@ export default function BrowseExercisesPage() {
               </div>
               <button
                 onClick={() => importExercise(ex)}
-                disabled={imported.has(ex.id)}
+                disabled={imported.has(ex.id) || importing.has(ex.id)}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
                   imported.has(ex.id)
                     ? "bg-accent/10 text-accent"
@@ -120,6 +141,8 @@ export default function BrowseExercisesPage() {
               >
                 {imported.has(ex.id) ? (
                   "Imported ✓"
+                ) : importing.has(ex.id) ? (
+                  <><Loader2 className="w-3 h-3 animate-spin" /> Importing...</>
                 ) : (
                   <>
                     <Plus className="w-3 h-3" /> Import

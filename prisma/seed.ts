@@ -230,6 +230,10 @@ async function main() {
         instructions: ex.instructions,
         breathingCue: ex.breathingCue,
         imageUrl: ex.imageUrl,
+        defaultReps: ex.reps,
+        defaultHoldSecs: ex.holdSeconds,
+        defaultRepDelay: 5,
+        defaultSides: ex.sides,
       },
     });
     createdExercises.push({ ...created, ...ex });
