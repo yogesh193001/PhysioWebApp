@@ -64,7 +64,9 @@ export async function addExerciseToWorkout(
   reps: number,
   holdSeconds: number | null,
   sides: string | null,
-  notes: string | null
+  notes: string | null,
+  repDelay: number = 5,
+  supersetGroupId: number | null = null
 ) {
   const maxOrder = await prisma.workoutExercise.findFirst({
     where: { workoutId },
@@ -74,7 +76,7 @@ export async function addExerciseToWorkout(
   const orderIndex = maxOrder ? maxOrder.orderIndex + 1 : 0;
 
   await prisma.workoutExercise.create({
-    data: { workoutId, exerciseId, orderIndex, reps, holdSeconds, sides, notes },
+    data: { workoutId, exerciseId, orderIndex, reps, holdSeconds, sides, notes, repDelay, supersetGroupId },
   });
 
   revalidatePath(`/admin/workouts/${workoutId}/edit`);
@@ -104,7 +106,7 @@ export async function removeExerciseFromWorkout(workoutExerciseId: string, worko
 export async function updateWorkoutExercise(
   workoutExerciseId: string,
   workoutId: string,
-  data: { reps?: number; holdSeconds?: number | null; sides?: string | null; notes?: string | null }
+  data: { reps?: number; holdSeconds?: number | null; sides?: string | null; notes?: string | null; repDelay?: number; supersetGroupId?: number | null }
 ) {
   await prisma.workoutExercise.update({
     where: { id: workoutExerciseId },

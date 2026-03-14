@@ -194,7 +194,8 @@ const exercises = [
     reps: 10,
     holdSeconds: 10,
     sides: null,
-    notes: "Do 1 McKenzie followed by a Child pose, then complete full sets of each",
+    notes: "Superset: alternate with Child Pose each rep",
+    supersetGroupId: 1,
   },
   {
     name: "Child pose",
@@ -206,7 +207,8 @@ const exercises = [
     reps: 10,
     holdSeconds: 20,
     sides: null,
-    notes: null,
+    notes: "Superset: alternate with McKenzie each rep",
+    supersetGroupId: 1,
   },
 ];
 
@@ -254,6 +256,7 @@ async function main() {
         holdSeconds: ex.holdSeconds,
         sides: ex.sides,
         notes: ex.notes,
+        supersetGroupId: (ex as any).supersetGroupId ?? null,
       },
     });
   }

@@ -4,41 +4,31 @@ import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowLeft, Search, Loader2, Upload, X } from "lucide-react";
-import { createExercise } from "@/lib/actions/exercises";
+import { ArrowLeft, Upload, X } from "lucide-react";
+import { updateExercise } from "@/lib/actions/exercises";
 
-type WgerResult = { id: number; name: string; category: string; image: string | null };
+type ExerciseData = {
+  id: string;
+  name: string;
+  category: string;
+  instructions: string;
+  breathingCue: string | null;
+  imageUrl: string | null;
+};
 
-function mapWgerCategory(cat: string | undefined): string {
-  if (!cat) return "Upper Body";
-  const l = cat.toLowerCase();
-  if (l.includes("arm") || l.includes("shoulder") || l.includes("chest")) return "Upper Body";
-  if (l.includes("leg") || l.includes("glute") || l.includes("calf")) return "Lower Body";
-  if (l.includes("back")) return "Back";
-  if (l.includes("ab") || l.includes("core")) return "Core";
-  return "Upper Body";
-}
-
-export default function NewExercisePage() {
+export default function EditExerciseForm({ exercise }: { exercise: ExerciseData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Form fields
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [instructions, setInstructions] = useState("");
-  const [breathingCue, setBreathingCue] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [name, setName] = useState(exercise.name);
+  const [category, setCategory] = useState(exercise.category);
+  const [instructions, setInstructions] = useState(exercise.instructions);
+  const [breathingCue, setBreathingCue] = useState(exercise.breathingCue || "");
+  const [imageUrl, setImageUrl] = useState(exercise.imageUrl || "");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-
-  // Wger search
-  const [wgerQuery, setWgerQuery] = useState("");
-  const [wgerResults, setWgerResults] = useState<WgerResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [showWger, setShowWger] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -57,30 +47,6 @@ export default function NewExercisePage() {
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const searchWger = async () => {
-    if (!wgerQuery.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch(`/api/wger/search?q=${encodeURIComponent(wgerQuery.trim())}`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setWgerResults(data.results || []);
-    } catch {
-      setWgerResults([]);
-    } finally {
-      setSearching(false);
-    }
-  };
-
-  const importWger = (ex: WgerResult) => {
-    setName(ex.name);
-    setCategory(mapWgerCategory(ex.category));
-    if (ex.image) setImageUrl(ex.image);
-    setShowWger(false);
-    setWgerResults([]);
-    setWgerQuery("");
-  };
-
   const handleSubmit = () => {
     if (!name || !category) {
       setError("Name and category are required");
@@ -96,14 +62,16 @@ export default function NewExercisePage() {
     if (imageFile) formData.set("imageFile", imageFile);
 
     startTransition(async () => {
-      const result = await createExercise(formData);
+      const result = await updateExercise(exercise.id, formData);
       if (result.success) {
         router.push("/admin/exercises");
       } else {
-        setError(result.error || "Failed to create exercise");
+        setError(result.error || "Failed to update exercise");
       }
     });
   };
+
+  const currentImage = imagePreview || imageUrl || exercise.imageUrl;
 
   return (
     <div className="max-w-2xl">
@@ -114,58 +82,7 @@ export default function NewExercisePage() {
         <ArrowLeft className="w-4 h-4" /> Back to exercises
       </Link>
 
-      <h1 className="text-3xl font-bold mb-6">Add New Exercise</h1>
-
-      {/* Wger import section */}
-      <div className="mb-6">
-        <button
-          type="button"
-          onClick={() => setShowWger(!showWger)}
-          className="text-sm text-primary hover:underline flex items-center gap-1"
-        >
-          <Search className="w-3 h-3" />
-          {showWger ? "Hide" : "Import from Wger exercise database"}
-        </button>
-
-        {showWger && (
-          <div className="mt-3 p-4 bg-surface border border-border rounded-lg">
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                value={wgerQuery}
-                onChange={(e) => setWgerQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && searchWger()}
-                placeholder="Search exercises..."
-                className="flex-1 px-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:outline-none text-sm"
-              />
-              <button
-                onClick={searchWger}
-                disabled={searching}
-                className="bg-primary text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1"
-              >
-                {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-                Search
-              </button>
-            </div>
-            {wgerResults.length > 0 && (
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {wgerResults.map((ex) => (
-                  <button
-                    key={ex.id}
-                    onClick={() => importWger(ex)}
-                    className="w-full text-left p-2 rounded hover:bg-border text-sm flex items-center gap-2"
-                  >
-                    <span className="font-medium">{ex.name}</span>
-                    {ex.category && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">{ex.category}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <h1 className="text-3xl font-bold mb-6">Edit Exercise</h1>
 
       {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
@@ -177,7 +94,6 @@ export default function NewExercisePage() {
             onChange={(e) => setName(e.target.value)}
             required
             className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
-            placeholder="Exercise name"
           />
         </div>
 
@@ -189,7 +105,6 @@ export default function NewExercisePage() {
             required
             className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
           >
-            <option value="">Select category</option>
             <option value="Upper Body">Upper Body</option>
             <option value="Neck">Neck</option>
             <option value="Back">Back</option>
@@ -205,7 +120,6 @@ export default function NewExercisePage() {
             onChange={(e) => setInstructions(e.target.value)}
             rows={4}
             className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none resize-y"
-            placeholder="Step-by-step instructions for performing this exercise"
           />
         </div>
 
@@ -215,7 +129,6 @@ export default function NewExercisePage() {
             value={breathingCue}
             onChange={(e) => setBreathingCue(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none"
-            placeholder="e.g., Breathe in going up, breathe out coming down"
           />
         </div>
 
@@ -225,7 +138,7 @@ export default function NewExercisePage() {
             <div className="flex items-center gap-2">
               <label className="cursor-pointer bg-surface border border-border px-4 py-2 rounded-lg text-sm hover:bg-border transition-colors flex items-center gap-2">
                 <Upload className="w-4 h-4" />
-                Upload Image
+                Upload New Image
                 <input
                   ref={fileRef}
                   type="file"
@@ -248,15 +161,14 @@ export default function NewExercisePage() {
                 placeholder="Or enter image URL"
               />
             )}
-            {imagePreview && (
+            {currentImage && (
               <div className="w-24 h-24 rounded-lg overflow-hidden border border-border">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-              </div>
-            )}
-            {!imagePreview && imageUrl && (
-              <div className="w-24 h-24 rounded-lg overflow-hidden border border-border">
-                <Image src={imageUrl} alt="Preview" width={96} height={96} className="w-full h-full object-cover" />
+                {imagePreview ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <Image src={currentImage} alt="Current" width={96} height={96} className="w-full h-full object-cover" />
+                )}
               </div>
             )}
           </div>
@@ -269,7 +181,7 @@ export default function NewExercisePage() {
             disabled={isPending}
             className="bg-primary text-white px-6 py-2 rounded-lg hover:bg-primary-dark transition-colors disabled:opacity-50"
           >
-            {isPending ? "Creating..." : "Create Exercise"}
+            {isPending ? "Saving..." : "Save Changes"}
           </button>
           <Link
             href="/admin/exercises"

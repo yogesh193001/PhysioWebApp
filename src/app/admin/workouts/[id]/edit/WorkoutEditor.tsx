@@ -9,6 +9,7 @@ import {
   reorderWorkoutExercises,
   updateWorkout,
 } from "@/lib/actions/workouts";
+import { createExercise } from "@/lib/actions/exercises";
 import {
   ChevronUp,
   ChevronDown,
@@ -16,6 +17,8 @@ import {
   Plus,
   Save,
   GripVertical,
+  Search,
+  Loader2,
 } from "lucide-react";
 
 type Exercise = {
@@ -32,8 +35,10 @@ type WorkoutExercise = {
   orderIndex: number;
   reps: number;
   holdSeconds: number | null;
+  repDelay: number;
   sides: string | null;
   notes: string | null;
+  supersetGroupId: number | null;
   exercise: Exercise;
 };
 
@@ -43,6 +48,18 @@ type Workout = {
   description: string | null;
   exercises: WorkoutExercise[];
 };
+
+type WgerResult = { id: number; name: string; category: string; image: string | null };
+
+function mapWgerCategory(cat: string | undefined): string {
+  if (!cat) return "Upper Body";
+  const l = cat.toLowerCase();
+  if (l.includes("arm") || l.includes("shoulder") || l.includes("chest")) return "Upper Body";
+  if (l.includes("leg") || l.includes("glute") || l.includes("calf")) return "Lower Body";
+  if (l.includes("back")) return "Back";
+  if (l.includes("ab") || l.includes("core")) return "Core";
+  return "Upper Body";
+}
 
 export default function WorkoutEditor({
   workout,
@@ -57,10 +74,26 @@ export default function WorkoutEditor({
   const [addExerciseId, setAddExerciseId] = useState("");
   const [addReps, setAddReps] = useState(3);
   const [addHold, setAddHold] = useState<string>("");
+  const [addRepDelay, setAddRepDelay] = useState(5);
   const [addSides, setAddSides] = useState("");
   const [addNotes, setAddNotes] = useState("");
+  const [addSupersetGroupId, setAddSupersetGroupId] = useState<string>("");
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
+
+  // Inline exercise creation
+  const [showCreateExercise, setShowCreateExercise] = useState(false);
+  const [newExName, setNewExName] = useState("");
+  const [newExCategory, setNewExCategory] = useState("");
+  const [newExInstructions, setNewExInstructions] = useState("");
+
+  // Wger search for inline creation
+  const [wgerQuery, setWgerQuery] = useState("");
+  const [wgerResults, setWgerResults] = useState<WgerResult[]>([]);
+  const [wgerSearching, setWgerSearching] = useState(false);
+  const [showWger, setShowWger] = useState(false);
+
+  const [exercises, setExercises] = useState(allExercises);
 
   const moveItem = (index: number, direction: "up" | "down") => {
     const newItems = [...items];
@@ -97,8 +130,9 @@ export default function WorkoutEditor({
         addHold ? parseInt(addHold) : null,
         addSides || null,
         addNotes || null,
+        addRepDelay,
+        addSupersetGroupId ? parseInt(addSupersetGroupId) : null,
       );
-      // Refresh the page to get updated data
       window.location.reload();
     });
   };
@@ -126,6 +160,78 @@ export default function WorkoutEditor({
       await updateWorkout(workout.id, formData);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    });
+  };
+
+  const handleCreateExercise = () => {
+    if (!newExName || !newExCategory) return;
+    const formData = new FormData();
+    formData.set("name", newExName);
+    formData.set("category", newExCategory);
+    formData.set("instructions", newExInstructions);
+    startTransition(async () => {
+      const result = await createExercise(formData);
+      if (result.success && result.id) {
+        const newEx: Exercise = {
+          id: result.id,
+          name: newExName,
+          category: newExCategory,
+          instructions: newExInstructions,
+          breathingCue: null,
+          imageUrl: null,
+        };
+        setExercises((prev) => [...prev, newEx].sort((a, b) => a.name.localeCompare(b.name)));
+        setAddExerciseId(result.id);
+        setNewExName("");
+        setNewExCategory("");
+        setNewExInstructions("");
+        setShowCreateExercise(false);
+      }
+    });
+  };
+
+  const searchWger = async () => {
+    if (!wgerQuery.trim()) return;
+    setWgerSearching(true);
+    try {
+      const res = await fetch(`/api/wger/search?q=${encodeURIComponent(wgerQuery.trim())}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setWgerResults(data.results || []);
+    } catch {
+      setWgerResults([]);
+    } finally {
+      setWgerSearching(false);
+    }
+  };
+
+  const importWger = async (ex: WgerResult) => {
+    startTransition(async () => {
+      const res = await fetch("/api/exercises/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: ex.name,
+          category: mapWgerCategory(ex.category),
+          instructions: "",
+        }),
+      });
+      if (res.ok) {
+        const imported = await res.json();
+        const newEx: Exercise = {
+          id: imported.id,
+          name: imported.name,
+          category: imported.category,
+          instructions: imported.instructions || "",
+          breathingCue: null,
+          imageUrl: null,
+        };
+        setExercises((prev) => [...prev, newEx].sort((a, b) => a.name.localeCompare(b.name)));
+        setAddExerciseId(imported.id);
+        setShowWger(false);
+        setWgerResults([]);
+        setWgerQuery("");
+      }
     });
   };
 
@@ -173,7 +279,6 @@ export default function WorkoutEditor({
               <div className="flex items-center gap-3">
                 <GripVertical className="w-4 h-4 text-muted flex-shrink-0" />
 
-                {/* Move buttons */}
                 <div className="flex flex-col gap-0.5 flex-shrink-0">
                   <button
                     onClick={() => moveItem(index, "up")}
@@ -214,6 +319,11 @@ export default function WorkoutEditor({
                   <span className="text-xs text-muted ml-2">
                     {we.exercise.category}
                   </span>
+                  {we.supersetGroupId != null && (
+                    <span className="text-xs ml-2 px-1.5 py-0.5 rounded bg-accent/10 text-accent">
+                      Superset {we.supersetGroupId}
+                    </span>
+                  )}
                 </div>
 
                 <button
@@ -260,6 +370,22 @@ export default function WorkoutEditor({
                   />
                 </div>
                 <div className="flex items-center gap-1">
+                  <label className="text-xs text-muted">Rep delay:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={we.repDelay}
+                    onChange={(e) =>
+                      handleUpdateItem(
+                        we.id,
+                        "repDelay",
+                        parseInt(e.target.value) || 5,
+                      )
+                    }
+                    className="w-14 px-2 py-1 text-sm rounded border border-border bg-background"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
                   <label className="text-xs text-muted">Sides:</label>
                   <input
                     type="text"
@@ -269,6 +395,23 @@ export default function WorkoutEditor({
                     }
                     className="w-32 px-2 py-1 text-sm rounded border border-border bg-background"
                     placeholder="e.g., each side"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <label className="text-xs text-muted">Superset:</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={we.supersetGroupId ?? ""}
+                    onChange={(e) =>
+                      handleUpdateItem(
+                        we.id,
+                        "supersetGroupId",
+                        e.target.value ? parseInt(e.target.value) : null,
+                      )
+                    }
+                    className="w-14 px-2 py-1 text-sm rounded border border-border bg-background"
+                    placeholder="—"
                   />
                 </div>
                 <div className="flex items-center gap-1">
@@ -292,6 +435,109 @@ export default function WorkoutEditor({
       {/* Add exercise */}
       <div className="bg-surface border border-border rounded-lg p-4">
         <h2 className="font-semibold mb-3">Add Exercise</h2>
+
+        {/* Wger import */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setShowWger(!showWger)}
+            className="text-sm text-primary hover:underline flex items-center gap-1 mb-2"
+          >
+            <Search className="w-3 h-3" />
+            {showWger ? "Hide Wger search" : "Import from Wger API"}
+          </button>
+          {showWger && (
+            <div className="p-3 bg-background border border-border rounded-lg mb-3">
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={wgerQuery}
+                  onChange={(e) => setWgerQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && searchWger()}
+                  placeholder="Search Wger exercises..."
+                  className="flex-1 px-3 py-1.5 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none text-sm"
+                />
+                <button
+                  onClick={searchWger}
+                  disabled={wgerSearching}
+                  className="bg-primary text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-1"
+                >
+                  {wgerSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+                </button>
+              </div>
+              {wgerResults.length > 0 && (
+                <div className="space-y-1 max-h-40 overflow-y-auto">
+                  {wgerResults.map((ex) => (
+                    <button
+                      key={ex.id}
+                      onClick={() => importWger(ex)}
+                      disabled={isPending}
+                      className="w-full text-left p-2 rounded hover:bg-border text-sm flex items-center justify-between"
+                    >
+                      <span>
+                        <span className="font-medium">{ex.name}</span>
+                        {ex.category && (
+                          <span className="text-xs text-muted ml-2">{ex.category}</span>
+                        )}
+                      </span>
+                      <Plus className="w-3 h-3 text-primary" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Inline create exercise */}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setShowCreateExercise(!showCreateExercise)}
+            className="text-sm text-primary hover:underline flex items-center gap-1 mb-2"
+          >
+            <Plus className="w-3 h-3" />
+            {showCreateExercise ? "Hide" : "Create new exercise"}
+          </button>
+          {showCreateExercise && (
+            <div className="p-3 bg-background border border-border rounded-lg mb-3 space-y-2">
+              <input
+                type="text"
+                value={newExName}
+                onChange={(e) => setNewExName(e.target.value)}
+                placeholder="Exercise name *"
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none text-sm"
+              />
+              <select
+                value={newExCategory}
+                onChange={(e) => setNewExCategory(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none text-sm"
+              >
+                <option value="">Select category *</option>
+                <option value="Upper Body">Upper Body</option>
+                <option value="Neck">Neck</option>
+                <option value="Back">Back</option>
+                <option value="Lower Body">Lower Body</option>
+                <option value="Core">Core</option>
+              </select>
+              <textarea
+                value={newExInstructions}
+                onChange={(e) => setNewExInstructions(e.target.value)}
+                placeholder="Instructions (optional)"
+                rows={2}
+                className="w-full px-3 py-1.5 rounded-lg border border-border bg-surface focus:border-primary focus:outline-none text-sm resize-y"
+              />
+              <button
+                onClick={handleCreateExercise}
+                disabled={!newExName || !newExCategory || isPending}
+                className="bg-accent text-white px-4 py-1.5 rounded-lg text-sm hover:bg-accent/80 transition-colors disabled:opacity-50"
+              >
+                Create & Select
+              </button>
+            </div>
+          )}
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="sm:col-span-2 lg:col-span-3">
             <select
@@ -300,7 +546,7 @@ export default function WorkoutEditor({
               className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:outline-none"
             >
               <option value="">Select an exercise...</option>
-              {allExercises.map((ex) => (
+              {exercises.map((ex) => (
                 <option key={ex.id} value={ex.id}>
                   {ex.name} ({ex.category})
                 </option>
@@ -331,6 +577,18 @@ export default function WorkoutEditor({
             />
           </div>
           <div>
+            <label className="block text-xs text-muted mb-1">
+              Rep delay (s)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={addRepDelay}
+              onChange={(e) => setAddRepDelay(parseInt(e.target.value) || 5)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+            />
+          </div>
+          <div>
             <label className="block text-xs text-muted mb-1">Sides</label>
             <input
               type="text"
@@ -338,6 +596,19 @@ export default function WorkoutEditor({
               onChange={(e) => setAddSides(e.target.value)}
               className="w-full px-3 py-2 rounded-lg border border-border bg-background"
               placeholder="e.g., each side"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1">
+              Superset group
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={addSupersetGroupId}
+              onChange={(e) => setAddSupersetGroupId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background"
+              placeholder="Optional"
             />
           </div>
           <div className="sm:col-span-2">

@@ -26,7 +26,12 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     const results = (data.suggestions || []).map(
-      (item: { data: { id: number; name: string; description: string; category: { id: number; name: string } } }) => item.data
+      (item: { data: { id: number; base_id: number; name: string; category: string; image: string | null; image_thumbnail: string | null } }) => ({
+        id: item.data.id || item.data.base_id,
+        name: item.data.name,
+        category: item.data.category || "",
+        image: item.data.image || item.data.image_thumbnail || null,
+      })
     );
 
     return NextResponse.json({ results });

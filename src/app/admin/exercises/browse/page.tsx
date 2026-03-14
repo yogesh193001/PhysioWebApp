@@ -7,8 +7,8 @@ import { ArrowLeft, Search, Plus, Loader2 } from "lucide-react";
 type WgerExercise = {
   id: number;
   name: string;
-  description: string;
-  category: { id: number; name: string };
+  category: string;
+  image: string | null;
 };
 
 export default function BrowseExercisesPage() {
@@ -43,8 +43,8 @@ export default function BrowseExercisesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: ex.name,
-          category: mapWgerCategory(ex.category?.name),
-          instructions: stripHtml(ex.description),
+          category: mapWgerCategory(ex.category),
+          instructions: "",
         }),
       });
       if (!res.ok) throw new Error("Failed to import");
@@ -103,14 +103,9 @@ export default function BrowseExercisesPage() {
             >
               <div className="flex-1 min-w-0">
                 <h3 className="font-medium">{ex.name}</h3>
-                {ex.description && (
-                  <p className="text-sm text-muted mt-1 line-clamp-2">
-                    {stripHtml(ex.description)}
-                  </p>
-                )}
-                {ex.category?.name && (
+                {ex.category && (
                   <span className="inline-block text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary mt-2">
-                    {ex.category.name}
+                    {ex.category}
                   </span>
                 )}
               </div>
@@ -143,10 +138,6 @@ export default function BrowseExercisesPage() {
       )}
     </div>
   );
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
 }
 
 function mapWgerCategory(wgerCat: string | undefined): string {
