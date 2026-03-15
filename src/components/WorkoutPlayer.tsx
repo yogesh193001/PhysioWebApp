@@ -275,15 +275,15 @@ export default function WorkoutPlayer({ workout }: { workout: WorkoutData }) {
     if (sideName) parts.push(sideName);
 
     if (step.totalReps > 1 && currentSide === 0 && step.rep > 1) {
-      // For supersets, just say the exercise name
+      // For supersets, instruction phase already says the name — skip here
       if (step.supersetLabel) {
-        parts.push(step.we.exercise.name);
+        // no-op: avoid double announcement
       } else {
-        parts.push(`This is your ${ordinal(step.rep)} rep`);
+        parts.push(`This is your ${ordinal(step.rep)} repetition`);
         // Occasionally say how many reps are left
         const repsLeft = step.totalReps - step.rep;
         if (repsLeft > 0 && (repsLeft <= 2 || step.rep % 3 === 0)) {
-          parts.push(`${repsLeft} rep${repsLeft > 1 ? "s" : ""} left`);
+          parts.push(`${repsLeft} repetition${repsLeft > 1 ? "s" : ""} left`);
         }
       }
     }
